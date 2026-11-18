@@ -105,6 +105,14 @@ export function CartDrawer({
 
   const handlePrepareOrder = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!currentUser) {
+      setErrorText('Please sign in with Google before placing an order.');
+      onClose();
+      onOpenAccount('profile');
+      return;
+    }
+
     if (items.length === 0) return;
 
     const validationError = validateCustomerDetails(customer);
