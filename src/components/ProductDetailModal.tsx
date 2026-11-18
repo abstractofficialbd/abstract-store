@@ -199,6 +199,12 @@ export function ProductDetailModal({
 
   const handlePrepareQuickOrder = (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!currentUser) {
+      setQuickOrderError('Please sign in with Google before placing an order.');
+      return;
+    }
+
     const validationError = validateCustomerDetails(customer);
     if (validationError) {
       setQuickOrderError(validationError);
