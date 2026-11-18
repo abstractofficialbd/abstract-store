@@ -54,6 +54,7 @@ import {
   saveSizeChartsToCloud,
   saveStoreConfigToCloud,
   signInOwnerWithGoogle,
+  signInCustomerWithGoogle, // ← NEW LINE
   signOutOwner,
   updateProductStockInCloud,
 } from './lib/firebase';
@@ -185,12 +186,12 @@ export default function App() {
 
   useEffect(() => {
     const isVerifiedCustomer = Boolean(currentUser && currentUser.emailVerified);
-    if (!currentUser || !isVerifiedCustomer) {
-      setCustomerProfile(null);
-      setCustomerOrders([]);
-      setCustomerOrdersLoading(false);
-      return;
-    }
+    if (!currentUser) {
+  setCustomerProfile(null);
+  setCustomerOrders([]);
+  setCustomerOrdersLoading(false);
+  return;
+}
 
     setCustomerOrdersLoading(true);
 
@@ -553,10 +554,10 @@ export default function App() {
   };
 
   const handleCustomerSignIn = async () => {
-    setAuthError('');
-    setAttemptedOwnerLogin(false);
-    await signInOwnerWithGoogle();
-  };
+  setAuthError('');
+  setAttemptedOwnerLogin(false);
+  await signInCustomerWithGoogle();
+};
 
   const handleOwnerSignOut = async () => {
     setAuthError('');
