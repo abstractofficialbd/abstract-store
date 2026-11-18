@@ -1,11 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import {
-  ConfirmationResult,
   GoogleAuthProvider,
-  RecaptchaVerifier,
   User,
   getAuth,
-  signInWithPhoneNumber,
   signInWithPopup,
   signOut,
 } from 'firebase/auth';
@@ -113,6 +110,11 @@ export async function signInOwnerWithGoogle(): Promise<User> {
   return result.user;
 }
 
+export async function signInCustomerWithGoogle(): Promise<User> {
+  const result = await signInWithPopup(auth, googleProvider);
+  return result.user;
+}
+
 export async function signOutOwner(): Promise<void> {
   await signOut(auth);
 }
@@ -191,6 +193,17 @@ export async function addProductToCloud(
     .filter(Boolean)
     .slice(0, 15);
 
+  const cleanStock = Math.min(
+    100000,
+    Math.max(0, Math.round(Number(product.stockCount ?? 15)))
+  );
+  const resolvedAvailability: Product['availability'] =
+    cleanStock === 0
+      ? 'Out of Stock'
+      : cleanStock <= 5 || product.availability === 'Limited'
+      ? 'Limited'
+      : 'In Stock';
+
   const payload = {
     id: safeId,
     name: clampString(product.name || '', 160) || 'Untitled Piece',
@@ -201,7 +214,8 @@ export async function addProductToCloud(
       clampString(product.image || '', 450000) ||
       '/src/assets/images/product_platinum_panjabi_1794991964940.jpg',
     colorway: clampString(product.colorway || '', 80) || 'Midnight Black',
-    availability: product.availability,
+    availability: resolvedAvailability,
+    stockCount: cleanStock,
     description: clampString(product.description || '', 2000),
     specs: cleanSpecs,
     sizes: cleanSizes.length > 0 ? cleanSizes : ['M'],
@@ -214,6 +228,26 @@ export async function addProductToCloud(
     await setDoc(doc(db, 'products', safeId), payload);
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function updateProductStockInCloud(
+  productId: string,
+  stockCount: number
+): Promise<void> {
+  const path = `products/${productId}`;
+  const cleanStock = Math.min(100000, Math.max(0, Math.round(Number(stockCount) || 0)));
+  const availability: Product['availability'] =
+    cleanStock === 0 ? 'Out of Stock' : cleanStock <= 5 ? 'Limited' : 'In Stock';
+
+  try {
+    await updateDoc(doc(db, 'products', productId), {
+      stockCount: cleanStock,
+      availability,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }
 
@@ -334,47 +368,6 @@ export async function removeProductReviewFromCloud(
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
-}
-
-export function normalizePhoneToE164(raw: string): string {
-  const trimmed = raw.trim();
-  const digits = trimmed.replace(/[^\d]/g, '');
-  if (!digits) {
-    throw new Error('Please enter your mobile phone number.');
-  }
-
-  let normalized = '';
-  if (trimmed.startsWith('+')) {
-    normalized = `+${digits}`;
-  } else if (digits.length === 11 && digits.startsWith('01')) {
-    normalized = `+880${digits.slice(1)}`;
-  } else if (digits.length === 13 && digits.startsWith('880')) {
-    normalized = `+${digits}`;
-  } else if (digits.length === 10 && digits.startsWith('1')) {
-    normalized = `+880${digits}`;
-  } else if (digits.length >= 7 && digits.length <= 15) {
-    normalized = `+${digits}`;
-  }
-
-  if (!/^\+[1-9]\d{6,14}$/.test(normalized)) {
-    throw new Error(
-      'Enter a valid phone number (e.g. 01712345678 or +8801712345678).'
-    );
-  }
-  return normalized;
-}
-
-export function createRecaptchaVerifier(containerId: string): RecaptchaVerifier {
-  return new RecaptchaVerifier(auth, containerId, {
-    size: 'invisible',
-  });
-}
-
-export async function sendPhoneOtp(
-  phoneE164: string,
-  verifier: RecaptchaVerifier
-): Promise<ConfirmationResult> {
-  return signInWithPhoneNumber(auth, phoneE164, verifier);
 }
 
 function sanitizeSavedAddresses(addresses: SavedAddress[]): SavedAddress[] {

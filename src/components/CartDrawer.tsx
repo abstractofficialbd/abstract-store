@@ -448,7 +448,7 @@ export function CartDrawer({
                       className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#000066] hover:underline cursor-pointer"
                     >
                       <ShieldCheck className="w-3.5 h-3.5 text-[#8E6B2E]" />
-                      <span>Sign in via OTP to save order &amp; address</span>
+                      <span>Sign in to save order &amp; address</span>
                     </button>
                   ) : (
                     <button

@@ -1,0 +1,8 @@
+{
+  "name": "𝖠𝖡𝖲𝖳𝖱𝖠𝖢𝖳.",
+  "description": "Fast growing clothing brand online storefront with instant WhatsApp ordering.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

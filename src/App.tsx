@@ -55,6 +55,7 @@ import {
   saveStoreConfigToCloud,
   signInOwnerWithGoogle,
   signOutOwner,
+  updateProductStockInCloud,
 } from './lib/firebase';
 import {
   CartItem,
@@ -183,9 +184,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const isVerifiedCustomer = Boolean(
-      currentUser && (currentUser.emailVerified || currentUser.phoneNumber)
-    );
+    const isVerifiedCustomer = Boolean(currentUser && currentUser.emailVerified);
     if (!currentUser || !isVerifiedCustomer) {
       setCustomerProfile(null);
       setCustomerOrders([]);
@@ -364,6 +363,16 @@ export default function App() {
       (snapshot) => {
         const nextProducts: Product[] = snapshot.docs.map((d) => {
           const data = d.data();
+          const parsedStock =
+            typeof data.stockCount === 'number'
+              ? Math.max(0, Math.round(data.stockCount))
+              : 10;
+          const resolvedAvailability: Product['availability'] =
+            parsedStock === 0 || data.availability === 'Out of Stock'
+              ? 'Out of Stock'
+              : data.availability === 'Limited'
+              ? 'Limited'
+              : 'In Stock';
           return {
             id: typeof data.id === 'string' ? data.id : d.id,
             name: String(data.name || ''),
@@ -372,7 +381,8 @@ export default function App() {
             price: Number(data.price) || 0,
             image: String(data.image || ''),
             colorway: String(data.colorway || ''),
-            availability: data.availability === 'Limited' ? 'Limited' : 'In Stock',
+            availability: resolvedAvailability,
+            stockCount: parsedStock,
             description: String(data.description || ''),
             specs: Array.isArray(data.specs) ? data.specs.map(String) : [],
             sizes: Array.isArray(data.sizes) ? data.sizes.map(String) : ['M'],
@@ -579,6 +589,16 @@ export default function App() {
     setSelectedCategory('All');
   };
 
+  const handleUpdateProductStock = async (
+    productId: string,
+    stockCount: number
+  ) => {
+    if (!isOwner || !currentUser) {
+      throw new Error('Owner authentication required.');
+    }
+    await updateProductStockInCloud(productId, stockCount);
+  };
+
   const handleRemoveProduct = async (productId: string) => {
     if (!isOwner || !currentUser) {
       throw new Error('Owner authentication required.');
@@ -750,6 +770,14 @@ export default function App() {
                     >
                       <Ruler className="w-3.5 h-3.5 text-[#8E6B2E]" />
                       <span>Edit Size Charts</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openSettingsModal('product')}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium text-[#0A1045] bg-[#F7F8FB] border border-[#D3D8E6] hover:border-[#000066] rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                    >
+                      <SlidersHorizontal className="w-3.5 h-3.5 text-[#8E6B2E]" />
+                      <span>Manage Stock</span>
                     </button>
                     <button
                       type="button"
@@ -1305,6 +1333,14 @@ export default function App() {
         isOwner={isOwner}
         onSignInForReview={handleCustomerSignIn}
         onOpenAccount={openCustomerAccount}
+        onEditStock={
+          isOwner
+            ? () => {
+                setActiveProduct(null);
+                openSettingsModal('product');
+              }
+            : undefined
+        }
         onClose={() => setActiveProduct(null)}
         onAddToBag={handleAddToBag}
       />
@@ -1362,6 +1398,7 @@ export default function App() {
           onSaveSettings={handleSaveSettings}
           onSaveSizeCharts={handleSaveSizeCharts}
           onAddProduct={handleAddProduct}
+          onUpdateProductStock={handleUpdateProductStock}
           onRemoveProduct={handleRemoveProduct}
           onResetCatalog={handleResetDefaults}
         />

@@ -58,6 +58,7 @@ interface ProductDetailModalProps {
   isOwner: boolean;
   onSignInForReview: () => Promise<void>;
   onOpenAccount: (tab: 'profile' | 'orders') => void;
+  onEditStock?: () => void;
   onClose: () => void;
   onAddToBag: (product: Product, size: string, quantity: number) => void;
 }
@@ -75,6 +76,7 @@ export function ProductDetailModal({
   isOwner,
   onSignInForReview,
   onOpenAccount,
+  onEditStock,
   onClose,
   onAddToBag,
 }: ProductDetailModalProps) {
@@ -183,6 +185,8 @@ export function ProductDetailModal({
 
   if (!product) return null;
 
+  const stockCount = Math.max(0, Math.round(product.stockCount ?? 0));
+  const isOutOfStock = stockCount === 0;
   const subtotal = product.price * quantity;
   const deliveryCharge = calculateDeliveryCharge(subtotal, settings);
   const totalBill = subtotal + deliveryCharge;
@@ -321,6 +325,32 @@ export function ProductDetailModal({
                     Base price: {formatConvertedCurrency(product.price, 'BDT', settings)}
                   </p>
                 )}
+                <div className="mt-1 flex items-center gap-2.5 flex-wrap">
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 text-[11px] font-mono-tabular font-semibold rounded ${
+                      isOutOfStock
+                        ? 'bg-[#FEF2F2] text-[#991B1B]'
+                        : stockCount <= 5
+                        ? 'bg-[#C5A467]/20 text-[#8E6B2E]'
+                        : 'bg-[#EEF1FA] text-[#000066]'
+                    }`}
+                  >
+                    {isOutOfStock
+                      ? 'Out of Stock (0 left)'
+                      : stockCount <= 5
+                      ? `Only ${stockCount} left in stock`
+                      : `${stockCount} left in stock`}
+                  </span>
+                  {isOwner && onEditStock && (
+                    <button
+                      type="button"
+                      onClick={onEditStock}
+                      className="text-[11px] font-semibold text-[#000066] hover:underline cursor-pointer"
+                    >
+                      Edit Stock
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div
@@ -457,20 +487,24 @@ export function ProductDetailModal({
               <div className="inline-flex items-center border border-[#D3D8E6] rounded-lg bg-white">
                 <button
                   type="button"
+                  disabled={isOutOfStock || quantity <= 1}
                   onClick={() => setQuantity((q) => Math.max(1, q - 1))}
                   aria-label="Decrease quantity"
-                  className="w-10 h-10 flex items-center justify-center text-[#0A1045] hover:bg-[#F1F3F8] rounded-l-lg cursor-pointer"
+                  className="w-10 h-10 flex items-center justify-center text-[#0A1045] hover:bg-[#F1F3F8] disabled:opacity-40 rounded-l-lg cursor-pointer"
                 >
                   <Minus className="w-3.5 h-3.5" />
                 </button>
                 <span className="w-10 text-center font-mono-tabular text-sm font-medium">
-                  {quantity}
+                  {isOutOfStock ? 0 : quantity}
                 </span>
                 <button
                   type="button"
-                  onClick={() => setQuantity((q) => q + 1)}
+                  disabled={isOutOfStock || quantity >= stockCount}
+                  onClick={() =>
+                    setQuantity((q) => Math.min(Math.max(1, stockCount), q + 1))
+                  }
                   aria-label="Increase quantity"
-                  className="w-10 h-10 flex items-center justify-center text-[#0A1045] hover:bg-[#F1F3F8] rounded-r-lg cursor-pointer"
+                  className="w-10 h-10 flex items-center justify-center text-[#0A1045] hover:bg-[#F1F3F8] disabled:opacity-40 rounded-r-lg cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
@@ -478,28 +512,40 @@ export function ProductDetailModal({
 
               <button
                 type="button"
+                disabled={isOutOfStock}
                 onClick={handleAdd}
-                className="flex-1 h-10 px-5 text-sm font-medium text-white bg-[#000066] hover:bg-[#091285] rounded-lg transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000066]"
+                className="flex-1 h-10 px-5 text-sm font-medium text-white bg-[#000066] hover:bg-[#091285] disabled:bg-[#A8B0C6] disabled:cursor-not-allowed rounded-lg transition-colors cursor-pointer whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000066]"
               >
-                Add Size {selectedSize} ·{' '}
-                {formatConvertedCurrency(subtotal, displayCurrency, settings)}
+                {isOutOfStock
+                  ? 'Out of Stock'
+                  : `Add Size ${selectedSize} · ${formatConvertedCurrency(
+                      subtotal,
+                      displayCurrency,
+                      settings
+                    )}`}
               </button>
             </div>
 
             {!showQuickOrderForm ? (
               <button
                 type="button"
+                disabled={isOutOfStock}
                 onClick={() => {
                   setShowQuickOrderForm(true);
                   setPreparedQuickOrder(null);
                   setQuickOrderError('');
                 }}
-                className="w-full h-10 px-4 inline-flex items-center justify-center gap-2 text-sm font-semibold text-[#050838] bg-[#C5A467] hover:bg-[#D4B475] rounded-lg transition-colors whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C5A467]"
+                className="w-full h-10 px-4 inline-flex items-center justify-center gap-2 text-sm font-semibold text-[#050838] bg-[#C5A467] hover:bg-[#D4B475] disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors whitespace-nowrap cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C5A467]"
               >
                 <MessageCircle className="w-4 h-4" strokeWidth={2} />
                 <span>
-                  Quick Order Size {selectedSize} ·{' '}
-                  {formatConvertedCurrency(totalBill, displayCurrency, settings)}
+                  {isOutOfStock
+                    ? 'Currently Unavailable'
+                    : `Quick Order Size ${selectedSize} · ${formatConvertedCurrency(
+                        totalBill,
+                        displayCurrency,
+                        settings
+                      )}`}
                 </span>
               </button>
             ) : preparedQuickOrder ? (
@@ -580,7 +626,7 @@ export function ProductDetailModal({
                     className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#000066] hover:underline cursor-pointer"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 text-[#8E6B2E]" />
-                    <span>Sign in via OTP to auto-fill &amp; save to Order History</span>
+                    <span>Sign in to auto-fill &amp; save to Order History</span>
                   </button>
                 )}
 
@@ -975,44 +1021,31 @@ export function ProductDetailModal({
               </div>
 
               {!currentUser ? (
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onClose();
-                      onOpenAccount('profile');
-                    }}
-                    className="w-full h-10 px-4 inline-flex items-center justify-center gap-2 text-xs font-semibold text-[#050838] bg-[#C5A467] hover:bg-[#D4B475] rounded-lg transition-colors cursor-pointer"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Sign in with Phone OTP to Post Review</span>
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isSigningInForReview}
-                    onClick={async () => {
-                      setReviewError('');
-                      setIsSigningInForReview(true);
-                      try {
-                        await onSignInForReview();
-                      } catch {
-                        setReviewError(
-                          'Google sign-in was cancelled or blocked. Please allow popups and try again.'
-                        );
-                      } finally {
-                        setIsSigningInForReview(false);
-                      }
-                    }}
-                    className="w-full h-9 px-4 inline-flex items-center justify-center gap-2 text-xs font-semibold text-white bg-[#000066] hover:bg-[#091285] disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <LogIn className="w-3.5 h-3.5 text-[#D9BC82]" />
-                    <span>
-                      {isSigningInForReview
-                        ? 'Signing in...'
-                        : 'Or Sign in with Google'}
-                    </span>
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  disabled={isSigningInForReview}
+                  onClick={async () => {
+                    setReviewError('');
+                    setIsSigningInForReview(true);
+                    try {
+                      await onSignInForReview();
+                    } catch {
+                      setReviewError(
+                        'Google sign-in was cancelled or blocked. Please allow popups and try again.'
+                      );
+                    } finally {
+                      setIsSigningInForReview(false);
+                    }
+                  }}
+                  className="w-full h-10 px-4 inline-flex items-center justify-center gap-2 text-xs font-semibold text-white bg-[#000066] hover:bg-[#091285] disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
+                >
+                  <LogIn className="w-3.5 h-3.5 text-[#D9BC82]" />
+                  <span>
+                    {isSigningInForReview
+                      ? 'Signing in...'
+                      : 'Sign in with Google to Post Review'}
+                  </span>
+                </button>
               ) : (
                 <button
                   type="submit"

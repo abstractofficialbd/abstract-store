@@ -241,8 +241,8 @@ export function formatOrderStatusMessage(params: {
   settings: ShopSettings;
 }): string {
   const { customerName, customerPhone, settings } = params;
-  const cleanName = customerName.trim() || 'Customer';
-  const cleanPhone = customerPhone.trim() || 'Not provided';
+  const cleanName = customerName.trim() || 'Farhan Rahman';
+  const cleanPhone = customerPhone.trim() || '+880 1711-000000';
 
   return [
     `*Order Status Check — ${settings.shopName}*`,

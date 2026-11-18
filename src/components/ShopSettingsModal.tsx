@@ -28,6 +28,7 @@ interface ShopSettingsModalProps {
   onSaveSettings: (next: ShopSettings) => Promise<void> | void;
   onSaveSizeCharts: (next: Record<SizeChartGroupKey, SizeChart>) => Promise<void> | void;
   onAddProduct: (product: Product) => Promise<void> | void;
+  onUpdateProductStock: (productId: string, stockCount: number) => Promise<void> | void;
   onRemoveProduct: (productId: string) => Promise<void> | void;
   onResetCatalog: () => Promise<void> | void;
 }
@@ -163,6 +164,7 @@ export function ShopSettingsModal({
   onSaveSettings,
   onSaveSizeCharts,
   onAddProduct,
+  onUpdateProductStock,
   onRemoveProduct,
   onResetCatalog,
 }: ShopSettingsModalProps) {
@@ -178,10 +180,13 @@ export function ShopSettingsModal({
     tier: 'Platinum' as CollectionTier,
     price: '4500',
     colorway: 'Midnight Black',
-    availability: 'In Stock' as 'In Stock' | 'Limited',
+    availability: 'In Stock' as 'In Stock' | 'Limited' | 'Out of Stock',
+    stockCount: '15',
     description: '',
     image: IMAGE_PRESETS[0].path,
   });
+  const [stockDrafts, setStockDrafts] = useState<Record<string, string>>({});
+  const [updatingStockId, setUpdatingStockId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState('');
   const [bannerUploadError, setBannerUploadError] = useState('');
   const [savedFeedback, setSavedFeedback] = useState('');
@@ -204,6 +209,14 @@ export function ShopSettingsModal({
   useEffect(() => {
     setChartDrafts(sizeCharts);
   }, [sizeCharts, isOpen]);
+
+  useEffect(() => {
+    const nextDrafts: Record<string, string> = {};
+    products.forEach((p) => {
+      nextDrafts[p.id] = String(Math.max(0, Math.round(p.stockCount ?? 0)));
+    });
+    setStockDrafts(nextDrafts);
+  }, [products, isOpen]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -485,6 +498,16 @@ export function ShopSettingsModal({
     setSaveError('');
     setIsSaving(true);
     const parsedPrice = Math.max(1, Number(newProduct.price) || 1500);
+    const parsedStock = Math.min(
+      100000,
+      Math.max(0, Math.round(Number(newProduct.stockCount) || 0))
+    );
+    const resolvedAvailability: Product['availability'] =
+      parsedStock === 0
+        ? 'Out of Stock'
+        : parsedStock <= 5 || newProduct.availability === 'Limited'
+        ? 'Limited'
+        : 'In Stock';
     const defaultSizes =
       newProduct.category === 'Panjabis'
         ? ['38 (S)', '40 (M)', '42 (L)', '44 (XL)']
@@ -500,7 +523,8 @@ export function ShopSettingsModal({
       price: parsedPrice,
       image: newProduct.image.trim() || IMAGE_PRESETS[0].path,
       colorway: newProduct.colorway.trim() || 'Midnight Black',
-      availability: newProduct.availability,
+      availability: resolvedAvailability,
+      stockCount: parsedStock,
       description:
         newProduct.description.trim() ||
         'Small-batch menswear piece tailored for daily rotation and direct WhatsApp ordering.',
@@ -517,6 +541,7 @@ export function ShopSettingsModal({
         price: '4500',
         colorway: 'Midnight Black',
         availability: 'In Stock',
+        stockCount: '15',
         description: '',
         image: IMAGE_PRESETS[0].path,
       });
@@ -526,6 +551,25 @@ export function ShopSettingsModal({
       setSaveError('Could not publish product. Please try again.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveStockClick = async (product: Product, nextStockOverride?: number) => {
+    const rawValue =
+      typeof nextStockOverride === 'number'
+        ? nextStockOverride
+        : Number(stockDrafts[product.id] ?? product.stockCount ?? 0);
+    const cleanStock = Math.min(100000, Math.max(0, Math.round(rawValue || 0)));
+
+    setSaveError('');
+    setUpdatingStockId(product.id);
+    try {
+      await onUpdateProductStock(product.id, cleanStock);
+      showFeedback(`Updated stock for "${product.name}" to ${cleanStock}`);
+    } catch {
+      setSaveError(`Could not update stock for "${product.name}". Please try again.`);
+    } finally {
+      setUpdatingStockId(null);
     }
   };
 
@@ -1366,7 +1410,7 @@ export function ShopSettingsModal({
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
                     <label className="block text-xs font-medium text-[#4A4A46] mb-1">
                       Colorway
@@ -1384,6 +1428,24 @@ export function ShopSettingsModal({
 
                   <div>
                     <label className="block text-xs font-medium text-[#4A4A46] mb-1">
+                      Stock Left (Qty) *
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="100000"
+                      required
+                      value={newProduct.stockCount}
+                      onChange={(e) =>
+                        setNewProduct((p) => ({ ...p, stockCount: e.target.value }))
+                      }
+                      placeholder="15"
+                      className="w-full h-10 px-3 text-sm font-mono-tabular bg-white border border-[#D6D6D2] rounded-lg focus:outline-none focus:border-[#000066]"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-[#4A4A46] mb-1">
                       Availability
                     </label>
                     <select
@@ -1391,13 +1453,17 @@ export function ShopSettingsModal({
                       onChange={(e) =>
                         setNewProduct((p) => ({
                           ...p,
-                          availability: e.target.value as 'In Stock' | 'Limited',
+                          availability: e.target.value as
+                            | 'In Stock'
+                            | 'Limited'
+                            | 'Out of Stock',
                         }))
                       }
                       className="w-full h-10 px-2 text-sm bg-white border border-[#D6D6D2] rounded-lg focus:outline-none focus:border-[#000066]"
                     >
                       <option value="In Stock">In Stock</option>
                       <option value="Limited">Limited</option>
+                      <option value="Out of Stock">Out of Stock</option>
                     </select>
                   </div>
                 </div>
@@ -1499,45 +1565,92 @@ export function ShopSettingsModal({
               {products.length > 0 && (
                 <div className="pt-4 border-t border-[#E1E5EE] space-y-2.5">
                   <p className="text-xs font-semibold uppercase tracking-wider text-[#59607A]">
-                    Listed Products ({products.length})
+                    Manage Products &amp; Stock ({products.length})
                   </p>
                   <div className="space-y-2">
-                    {products.map((item) => (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between gap-3 p-2.5 bg-white border border-[#E1E5EE] rounded-lg"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <ResilientImage
-                            src={item.image}
-                            alt={item.name}
-                            fallbackLabel={item.category}
-                            className="w-10 h-12 object-cover rounded border border-[#E1E5EE] shrink-0"
-                          />
-                          <div className="min-w-0">
-                            <p className="text-xs font-semibold text-[#0A1045] truncate">
-                              {item.name}
-                            </p>
-                            <p className="text-[11px] text-[#59607A]">
-                              {item.category} · {item.tier} ·{' '}
-                              <span className="font-mono-tabular">
-                                {formatCurrency(item.price, settings.currencySymbol)}
+                    {products.map((item) => {
+                      const draftVal =
+                        stockDrafts[item.id] ??
+                        String(Math.max(0, Math.round(item.stockCount ?? 0)));
+                      const numericDraft = Math.max(
+                        0,
+                        Math.round(Number(draftVal) || 0)
+                      );
+                      const isUpdatingThis = updatingStockId === item.id;
+                      const isDirty =
+                        numericDraft !== Math.max(0, Math.round(item.stockCount ?? 0));
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-white border border-[#E1E5EE] rounded-lg"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <ResilientImage
+                              src={item.image}
+                              alt={item.name}
+                              fallbackLabel={item.category}
+                              className="w-10 h-12 object-cover rounded border border-[#E1E5EE] shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-xs font-semibold text-[#0A1045] truncate">
+                                {item.name}
+                              </p>
+                              <p className="text-[11px] text-[#59607A]">
+                                {item.category} · {item.tier} ·{' '}
+                                <span className="font-mono-tabular">
+                                  {formatCurrency(item.price, settings.currencySymbol)}
+                                </span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-medium text-[#59607A]">
+                                Stock:
                               </span>
-                            </p>
+                              <input
+                                type="number"
+                                min="0"
+                                max="100000"
+                                aria-label={`Stock left for ${item.name}`}
+                                value={draftVal}
+                                onChange={(e) =>
+                                  setStockDrafts((prev) => ({
+                                    ...prev,
+                                    [item.id]: e.target.value,
+                                  }))
+                                }
+                                className="w-16 h-8 px-2 text-xs font-mono-tabular font-semibold text-center bg-[#F7F8FB] border border-[#D6D6D2] rounded-md focus:outline-none focus:border-[#000066]"
+                              />
+                              <button
+                                type="button"
+                                disabled={isUpdatingThis || !isDirty}
+                                onClick={() => void handleSaveStockClick(item)}
+                                className={`h-8 px-2.5 text-[11px] font-semibold rounded-md transition-colors cursor-pointer whitespace-nowrap ${
+                                  isDirty
+                                    ? 'bg-[#C5A467] hover:bg-[#D4B475] text-[#050838]'
+                                    : 'bg-[#F1F3F8] text-[#8890A8] cursor-default'
+                                }`}
+                              >
+                                {isUpdatingThis ? 'Saving...' : 'Update'}
+                              </button>
+                            </div>
+
+                            <button
+                              type="button"
+                              disabled={isSaving}
+                              onClick={() => handleRemoveProductClick(item.id)}
+                              aria-label={`Remove ${item.name}`}
+                              className="p-2 text-[#737B96] hover:text-[#B91C1C] disabled:opacity-40 transition-colors shrink-0 cursor-pointer"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
                           </div>
                         </div>
-
-                        <button
-                          type="button"
-                          disabled={isSaving}
-                          onClick={() => handleRemoveProductClick(item.id)}
-                          aria-label={`Remove ${item.name}`}
-                          className="p-2 text-[#737B96] hover:text-[#B91C1C] disabled:opacity-40 transition-colors shrink-0 cursor-pointer"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

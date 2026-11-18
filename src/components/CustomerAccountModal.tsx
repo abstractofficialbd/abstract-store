@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Camera,
-  Check,
   Clock,
   ExternalLink,
   LogIn,
@@ -12,20 +11,16 @@ import {
   Package,
   Phone,
   Plus,
-  ShieldCheck,
   Star,
   Trash2,
   User as UserIcon,
-  UserPlus,
   X,
 } from 'lucide-react';
-import { ConfirmationResult, RecaptchaVerifier, User } from 'firebase/auth';
+import { User } from 'firebase/auth';
 import {
-  createRecaptchaVerifier,
   ensureCustomerProfileShell,
-  normalizePhoneToE164,
   saveCustomerProfileToCloud,
-  sendPhoneOtp,
+  signInCustomerWithGoogle,
 } from '../lib/firebase';
 import {
   CustomerOrder,
@@ -52,9 +47,7 @@ interface CustomerAccountModalProps {
   onOpenCatalog: () => void;
 }
 
-type AuthMode = 'login' | 'signup';
-
-function getInitials(name: string, phone: string): string {
+function getInitials(name: string, emailOrPhone: string): string {
   const clean = name.trim();
   if (clean) {
     const parts = clean.split(/\s+/).filter(Boolean);
@@ -63,39 +56,8 @@ function getInitials(name: string, phone: string): string {
     }
     return clean.slice(0, 2).toUpperCase();
   }
-  const digits = phone.replace(/[^\d]/g, '');
-  return digits ? digits.slice(-2) : 'AB';
-}
-
-function mapPhoneAuthError(err: unknown): string {
-  const code =
-    typeof err === 'object' && err !== null && 'code' in err
-      ? String((err as { code?: unknown }).code || '')
-      : '';
-  const msg = err instanceof Error ? err.message : '';
-
-  if (code === 'auth/operation-not-allowed' || code === 'auth/configuration-not-found') {
-    return 'Phone OTP authentication is not enabled yet in Firebase Console. Enable the Phone sign-in provider in Firebase Authentication -> Sign-in method and authorize this domain.';
-  }
-  if (code === 'auth/invalid-app-credential' || code === 'auth/captcha-check-failed') {
-    return 'App verification could not complete for this domain. Add this domain to Firebase Authentication -> Settings -> Authorized domains.';
-  }
-  if (code === 'auth/invalid-phone-number') {
-    return 'Please enter a valid mobile number (for example 01712345678 or +8801712345678).';
-  }
-  if (code === 'auth/too-many-requests') {
-    return 'Too many OTP requests right now. Please wait a few minutes and try again.';
-  }
-  if (code === 'auth/invalid-verification-code') {
-    return 'The 6-digit OTP code is incorrect. Please check and try again.';
-  }
-  if (code === 'auth/code-expired') {
-    return 'This OTP code has expired. Please request a new verification code.';
-  }
-  if (msg && !msg.startsWith('{')) {
-    return msg;
-  }
-  return 'Could not verify your phone number right now. Please try again.';
+  const fallback = emailOrPhone.trim();
+  return fallback ? fallback.slice(0, 2).toUpperCase() : 'AB';
 }
 
 export function CustomerAccountModal({
@@ -111,20 +73,10 @@ export function CustomerAccountModal({
   onOpenCatalog,
 }: CustomerAccountModalProps) {
   const [activeTab, setActiveTab] = useState<CustomerAccountTab>(initialTab);
-  const [authMode, setAuthMode] = useState<AuthMode>('login');
-
-  // Phone + OTP state
-  const [phoneInput, setPhoneInput] = useState('');
-  const [formattedPhone, setFormattedPhone] = useState('');
-  const [otpInput, setOtpInput] = useState('');
-  const [confirmationResult, setConfirmationResult] =
-    useState<ConfirmationResult | null>(null);
-  const [isSendingOtp, setIsSendingOtp] = useState(false);
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
   const [authError, setAuthError] = useState('');
-  const verifierRef = useRef<RecaptchaVerifier | null>(null);
 
-  // Onboarding / Profile form state
+  // Profile form state
   const [fullNameInput, setFullNameInput] = useState('');
   const [phoneProfileInput, setPhoneProfileInput] = useState('');
   const [emailInput, setEmailInput] = useState('');
@@ -165,10 +117,11 @@ export function CustomerAccountModal({
     }
 
     setFullNameInput(profile?.fullName ?? currentUser.displayName ?? '');
+    const storedPhone = profile?.phoneNumber ?? '';
     setPhoneProfileInput(
-      profile?.phoneNumber && profile.phoneNumber !== 'Pending'
-        ? profile.phoneNumber
-        : currentUser.phoneNumber || ''
+      storedPhone && storedPhone !== 'Pending' && storedPhone !== currentUser.email
+        ? storedPhone
+        : ''
     );
     setEmailInput(profile?.email ?? currentUser.email ?? '');
     setPhotoUrlInput(profile?.photoUrl ?? currentUser.photoURL ?? '');
@@ -183,108 +136,22 @@ export function CustomerAccountModal({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  useEffect(() => {
-    return () => {
-      if (verifierRef.current) {
-        try {
-          verifierRef.current.clear();
-        } catch {
-          // Ignore cleanup errors
-        }
-        verifierRef.current = null;
-      }
-    };
-  }, [isOpen]);
-
   if (!isOpen) return null;
-
-  const isPhoneSignedInUser = Boolean(currentUser && currentUser.phoneNumber);
-  const needsProfileOnboarding = Boolean(
-    currentUser &&
-      isPhoneSignedInUser &&
-      (!profile || !profile.fullName.trim())
-  );
 
   const savedAddresses = profile?.addresses || [];
 
-  const resetOtpFlow = () => {
-    setConfirmationResult(null);
-    setOtpInput('');
+  const handleGoogleSignIn = async () => {
     setAuthError('');
-    if (verifierRef.current) {
-      try {
-        verifierRef.current.clear();
-      } catch {
-        // Ignore
-      }
-      verifierRef.current = null;
-    }
-  };
-
-  const handleSendOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthError('');
-    let e164 = '';
+    setIsSigningIn(true);
     try {
-      e164 = normalizePhoneToE164(phoneInput);
-    } catch (err) {
-      setAuthError(err instanceof Error ? err.message : 'Invalid phone number.');
-      return;
-    }
-
-    setIsSendingOtp(true);
-    try {
-      if (verifierRef.current) {
-        try {
-          verifierRef.current.clear();
-        } catch {
-          // Ignore
-        }
-        verifierRef.current = null;
-      }
-      const verifier = createRecaptchaVerifier('customer-recaptcha-container');
-      verifierRef.current = verifier;
-      const result = await sendPhoneOtp(e164, verifier);
-      setFormattedPhone(e164);
-      setConfirmationResult(result);
-    } catch (err) {
-      if (verifierRef.current) {
-        try {
-          verifierRef.current.clear();
-        } catch {
-          // Ignore
-        }
-        verifierRef.current = null;
-      }
-      setAuthError(mapPhoneAuthError(err));
-    } finally {
-      setIsSendingOtp(false);
-    }
-  };
-
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!confirmationResult) return;
-    const code = otpInput.trim();
-    if (code.length < 6) {
-      setAuthError('Please enter the 6-digit OTP code sent to your phone.');
-      return;
-    }
-
-    setAuthError('');
-    setIsVerifyingOtp(true);
-    try {
-      const credential = await confirmationResult.confirm(code);
-      await ensureCustomerProfileShell(
-        credential.user,
-        formattedPhone || credential.user.phoneNumber || undefined
+      const user = await signInCustomerWithGoogle();
+      await ensureCustomerProfileShell(user);
+    } catch {
+      setAuthError(
+        'Sign-in was cancelled or blocked. Please allow popups and try again.'
       );
-      resetOtpFlow();
-      setPhoneInput('');
-    } catch (err) {
-      setAuthError(mapPhoneAuthError(err));
     } finally {
-      setIsVerifyingOtp(false);
+      setIsSigningIn(false);
     }
   };
 
@@ -316,8 +183,9 @@ export function CustomerAccountModal({
       setProfileError('Please enter your name.');
       return;
     }
+
     const cleanPhone =
-      phoneProfileInput.trim() || currentUser.phoneNumber || 'Pending';
+      phoneProfileInput.trim() || currentUser.email || 'Pending';
 
     setIsSavingProfile(true);
     try {
@@ -388,7 +256,7 @@ export function CustomerAccountModal({
         phoneNumber:
           phoneProfileInput.trim() ||
           profile?.phoneNumber ||
-          currentUser.phoneNumber ||
+          currentUser.email ||
           'Pending',
         email: emailInput.trim() || profile?.email || currentUser.email || '',
         photoUrl: photoUrlInput.trim() || profile?.photoUrl || '',
@@ -426,7 +294,7 @@ export function CustomerAccountModal({
         phoneNumber:
           phoneProfileInput.trim() ||
           profile?.phoneNumber ||
-          currentUser.phoneNumber ||
+          currentUser.email ||
           'Pending',
         email: emailInput.trim() || profile?.email || currentUser.email || '',
         photoUrl: photoUrlInput.trim() || profile?.photoUrl || '',
@@ -458,7 +326,7 @@ export function CustomerAccountModal({
         phoneNumber:
           phoneProfileInput.trim() ||
           profile?.phoneNumber ||
-          currentUser.phoneNumber ||
+          currentUser.email ||
           'Pending',
         email: emailInput.trim() || profile?.email || currentUser.email || '',
         photoUrl: photoUrlInput.trim() || profile?.photoUrl || '',
@@ -467,11 +335,6 @@ export function CustomerAccountModal({
     } catch {
       setAddressError('Could not remove address.');
     }
-  };
-
-  const handleLogoutClick = async () => {
-    resetOtpFlow();
-    await onSignOut();
   };
 
   return (
@@ -486,9 +349,6 @@ export function CustomerAccountModal({
         className="w-full max-w-2xl max-h-[90vh] bg-[#F7F8FB] border border-[#E1E5EE] rounded-xl shadow-2xl flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Invisible reCAPTCHA mount */}
-        <div id="customer-recaptcha-container" />
-
         {/* Header */}
         <div className="px-6 py-4 bg-[#000066] text-white border-b border-[#C5A467]/35 flex items-center justify-between gap-4">
           {!currentUser ? (
@@ -497,9 +357,7 @@ export function CustomerAccountModal({
                 Customer Account
               </p>
               <h2 className="font-display text-xl font-semibold text-white">
-                {authMode === 'login'
-                  ? 'Login with Phone OTP'
-                  : 'New Customer Verification'}
+                Sign In to Profile &amp; Order History
               </h2>
             </div>
           ) : (
@@ -513,19 +371,19 @@ export function CustomerAccountModal({
                   />
                 ) : (
                   <span className="text-xs font-semibold text-[#D9BC82]">
-                    {getInitials(fullNameInput, phoneProfileInput)}
+                    {getInitials(
+                      fullNameInput,
+                      emailInput || phoneProfileInput
+                    )}
                   </span>
                 )}
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-white truncate">
-                  {fullNameInput.trim() || 'Welcome to ' + settings.shopName}
+                  {fullNameInput.trim() || `Welcome to ${settings.shopName}`}
                 </p>
-                <p className="text-xs text-[#D9BC82] font-mono-tabular truncate flex items-center gap-1">
-                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                  <span>
-                    {phoneProfileInput || currentUser.email || 'Verified Account'}
-                  </span>
+                <p className="text-xs text-[#D9BC82] truncate">
+                  {phoneProfileInput || currentUser.email || 'Customer Account'}
                 </p>
               </div>
             </div>
@@ -535,7 +393,7 @@ export function CustomerAccountModal({
             {currentUser && (
               <button
                 type="button"
-                onClick={handleLogoutClick}
+                onClick={() => void onSignOut()}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[#050838] bg-[#C5A467] hover:bg-[#D4B475] rounded-lg transition-colors cursor-pointer whitespace-nowrap"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -555,52 +413,17 @@ export function CustomerAccountModal({
 
         {/* Body */}
         {!currentUser ? (
-          <div className="p-6 sm:p-8 overflow-y-auto space-y-6">
-            {/* Existing vs New customer switcher */}
-            <div className="grid grid-cols-2 gap-2 p-1 bg-white border border-[#E1E5EE] rounded-xl">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('login');
-                  resetOtpFlow();
-                }}
-                className={`h-10 px-3 inline-flex items-center justify-center gap-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                  authMode === 'login'
-                    ? 'bg-[#000066] text-white'
-                    : 'text-[#434963] hover:text-[#000066]'
-                }`}
-              >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>Customer Login</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('signup');
-                  resetOtpFlow();
-                }}
-                className={`h-10 px-3 inline-flex items-center justify-center gap-2 text-xs font-semibold rounded-lg transition-colors cursor-pointer ${
-                  authMode === 'signup'
-                    ? 'bg-[#000066] text-white'
-                    : 'text-[#434963] hover:text-[#000066]'
-                }`}
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>Create Account</span>
-              </button>
-            </div>
-
-            <div className="p-5 sm:p-6 bg-white border border-[#E1E5EE] rounded-xl space-y-4">
+          <div className="p-6 sm:p-8 overflow-y-auto">
+            <div className="p-6 bg-white border border-[#E1E5EE] rounded-xl space-y-5">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-[#8E6B2E] mb-1">
-                  {authMode === 'login'
-                    ? 'Returning Customer'
-                    : 'New Customer Registration'}
+                  Customer Portal
                 </p>
+                <h3 className="font-display text-2xl font-semibold text-[#0A1045] mb-2">
+                  View past orders &amp; save delivery addresses
+                </h3>
                 <p className="text-sm text-[#434963] leading-relaxed">
-                  {authMode === 'login'
-                    ? 'Enter your previously registered phone number. We will send a one-time verification code (OTP) to access your profile, saved addresses, and Order History.'
-                    : 'Verify your mobile number with an OTP code. Right after verification, you can add your name and upload a profile photo.'}
+                  Sign in with your Google account to track your past orders, save up to 3 delivery locations (with a default address for faster WhatsApp checkout), and customize your profile photo and contact number.
                 </p>
               </div>
 
@@ -613,228 +436,20 @@ export function CustomerAccountModal({
                 </p>
               )}
 
-              {!confirmationResult ? (
-                <form onSubmit={handleSendOtp} className="space-y-4">
-                  <div>
-                    <label
-                      htmlFor="otp-phone-input"
-                      className="block text-xs font-medium text-[#434963] mb-1.5"
-                    >
-                      Mobile Phone Number *
-                    </label>
-                    <div className="relative">
-                      <Phone className="w-4 h-4 text-[#737B96] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      <input
-                        id="otp-phone-input"
-                        type="tel"
-                        required
-                        value={phoneInput}
-                        onChange={(e) => setPhoneInput(e.target.value)}
-                        placeholder="01712-345678 or +8801712345678"
-                        className="w-full h-11 pl-10 pr-3 text-sm font-mono-tabular bg-[#F7F8FB] border border-[#D3D8E6] rounded-lg focus:outline-none focus:border-[#000066]"
-                      />
-                    </div>
-                    <p className="mt-1.5 text-[11px] text-[#59607A]">
-                      Bangladesh numbers like <span className="font-mono-tabular">017...</span> automatically format to <span className="font-mono-tabular">+880...</span>.
-                    </p>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isSendingOtp}
-                    className="w-full h-11 px-5 inline-flex items-center justify-center gap-2 text-sm font-semibold text-[#050838] bg-[#C5A467] hover:bg-[#D4B475] disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>
-                      {isSendingOtp
-                        ? 'Sending OTP Code...'
-                        : authMode === 'login'
-                        ? 'Send Login OTP'
-                        : 'Send Verification OTP'}
-                    </span>
-                  </button>
-                </form>
-              ) : (
-                <form onSubmit={handleVerifyOtp} className="space-y-4">
-                  <div className="p-3 bg-[#F7F8FB] border border-[#E1E5EE] rounded-lg flex items-center justify-between gap-2 text-xs">
-                    <span className="text-[#434963]">
-                      OTP sent to{' '}
-                      <strong className="font-mono-tabular text-[#000066]">
-                        {formattedPhone}
-                      </strong>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={resetOtpFlow}
-                      className="font-semibold text-[#000066] hover:underline cursor-pointer"
-                    >
-                      Change Number
-                    </button>
-                  </div>
-
-                  <div>
-                    <label
-                      htmlFor="otp-code-input"
-                      className="block text-xs font-medium text-[#434963] mb-1.5"
-                    >
-                      Enter 6-Digit OTP Code *
-                    </label>
-                    <input
-                      id="otp-code-input"
-                      type="text"
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      maxLength={6}
-                      required
-                      value={otpInput}
-                      onChange={(e) =>
-                        setOtpInput(e.target.value.replace(/[^\d]/g, ''))
-                      }
-                      placeholder="123456"
-                      className="w-full h-12 px-4 text-center text-lg tracking-[0.4em] font-mono-tabular font-semibold bg-[#F7F8FB] border border-[#D3D8E6] rounded-lg focus:outline-none focus:border-[#000066]"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={isVerifyingOtp}
-                    className="w-full h-11 px-5 inline-flex items-center justify-center gap-2 text-sm font-semibold text-white bg-[#000066] hover:bg-[#091285] disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
-                  >
-                    <Check className="w-4 h-4 text-[#C5A467]" />
-                    <span>
-                      {isVerifyingOtp ? 'Verifying OTP...' : 'Verify & Sign In'}
-                    </span>
-                  </button>
-                </form>
-              )}
-            </div>
-          </div>
-        ) : needsProfileOnboarding ? (
-          /* Onboarding screen right after first Phone OTP sign-in */
-          <form
-            onSubmit={handleSaveProfile}
-            className="p-6 sm:p-8 overflow-y-auto space-y-5"
-          >
-            <div className="p-5 bg-white border border-[#E1E5EE] rounded-xl space-y-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-wider text-[#8E6B2E] mb-1">
-                  Phone Verified · Complete Profile
-                </p>
-                <h3 className="font-display text-2xl font-semibold text-[#0A1045]">
-                  Tell us your name &amp; add a photo
-                </h3>
-                <p className="text-xs text-[#59607A] mt-1">
-                  Finish setting up your profile to access saved delivery addresses and Order History.
-                </p>
-              </div>
-
-              {profileError && (
-                <p
-                  role="alert"
-                  className="p-3 text-xs font-medium text-[#991B1B] bg-[#FEF2F2] border border-[#FECACA] rounded-lg"
-                >
-                  {profileError}
-                </p>
-              )}
-
-              <div className="flex flex-col sm:flex-row sm:items-center gap-4 pt-1">
-                <div className="w-20 h-20 rounded-full overflow-hidden border-2 border-[#C5A467] bg-[#000066] flex items-center justify-center shrink-0">
-                  {photoUrlInput ? (
-                    <img
-                      src={photoUrlInput}
-                      alt="Profile preview"
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <UserIcon className="w-8 h-8 text-[#D9BC82]" />
-                  )}
-                </div>
-                <div className="space-y-1.5">
-                  <label className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-[#000066] bg-[#EEF1FA] hover:bg-[#E1E5EE] rounded-lg cursor-pointer transition-colors">
-                    <Camera className="w-3.5 h-3.5" />
-                    <span>
-                      {isProcessingPhoto
-                        ? 'Processing Photo...'
-                        : photoUrlInput
-                        ? 'Change Profile Photo'
-                        : 'Upload Profile Pic'}
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handlePhotoUpload}
-                      className="sr-only"
-                    />
-                  </label>
-                  <p className="text-[11px] text-[#59607A]">
-                    Optional · JPG or PNG automatically compressed.
-                  </p>
-                </div>
-              </div>
-
-              <div>
-                <label
-                  htmlFor="onboard-fullname"
-                  className="block text-xs font-medium text-[#434963] mb-1"
-                >
-                  Full Name *
-                </label>
-                <input
-                  id="onboard-fullname"
-                  type="text"
-                  required
-                  value={fullNameInput}
-                  onChange={(e) => setFullNameInput(e.target.value)}
-                  placeholder="Enter your full name"
-                  className="w-full h-10 px-3 text-sm bg-[#F7F8FB] border border-[#D3D8E6] rounded-lg focus:outline-none focus:border-[#000066]"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label
-                    htmlFor="onboard-phone"
-                    className="block text-xs font-medium text-[#434963] mb-1"
-                  >
-                    Verified Phone Number
-                  </label>
-                  <input
-                    id="onboard-phone"
-                    type="tel"
-                    value={phoneProfileInput}
-                    onChange={(e) => setPhoneProfileInput(e.target.value)}
-                    className="w-full h-10 px-3 text-sm font-mono-tabular bg-[#F7F8FB] border border-[#D3D8E6] rounded-lg focus:outline-none focus:border-[#000066]"
-                  />
-                </div>
-                <div>
-                  <label
-                    htmlFor="onboard-email"
-                    className="block text-xs font-medium text-[#434963] mb-1"
-                  >
-                    Email Address (Optional)
-                  </label>
-                  <input
-                    id="onboard-email"
-                    type="email"
-                    value={emailInput}
-                    onChange={(e) => setEmailInput(e.target.value)}
-                    placeholder="you@example.com"
-                    className="w-full h-10 px-3 text-sm bg-[#F7F8FB] border border-[#D3D8E6] rounded-lg focus:outline-none focus:border-[#000066]"
-                  />
-                </div>
-              </div>
-
               <button
-                type="submit"
-                disabled={isSavingProfile || isProcessingPhoto}
-                className="w-full h-11 px-5 text-sm font-semibold text-[#050838] bg-[#C5A467] hover:bg-[#D4B475] disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
+                type="button"
+                disabled={isSigningIn}
+                onClick={handleGoogleSignIn}
+                className="w-full h-11 px-5 inline-flex items-center justify-center gap-2 text-sm font-semibold text-[#050838] bg-[#C5A467] hover:bg-[#D4B475] disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
               >
-                {isSavingProfile ? 'Saving Profile...' : 'Save & Continue to Profile'}
+                <LogIn className="w-4 h-4" />
+                <span>
+                  {isSigningIn ? 'Signing in...' : 'Continue with Google'}
+                </span>
               </button>
             </div>
-          </form>
+          </div>
         ) : (
-          /* Signed-in Profile & Order History Tabs */
           <>
             <div className="px-6 pt-3 bg-white border-b border-[#E1E5EE] flex items-center gap-2">
               <button
@@ -901,7 +516,10 @@ export function CustomerAccountModal({
                           />
                         ) : (
                           <span className="text-sm font-semibold text-[#D9BC82]">
-                            {getInitials(fullNameInput, phoneProfileInput)}
+                            {getInitials(
+                              fullNameInput,
+                              emailInput || phoneProfileInput
+                            )}
                           </span>
                         )}
                       </div>
@@ -910,7 +528,11 @@ export function CustomerAccountModal({
                         <label className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-[#000066] bg-[#EEF1FA] hover:bg-[#E1E5EE] rounded-lg cursor-pointer transition-colors">
                           <Camera className="w-3.5 h-3.5" />
                           <span>
-                            {isProcessingPhoto ? 'Uploading...' : 'Change Photo'}
+                            {isProcessingPhoto
+                              ? 'Uploading...'
+                              : photoUrlInput
+                              ? 'Change Photo'
+                              : 'Upload Profile Pic'}
                           </span>
                           <input
                             type="file"
@@ -955,17 +577,19 @@ export function CustomerAccountModal({
                           htmlFor="profile-phone"
                           className="block text-xs font-medium text-[#434963] mb-1"
                         >
-                          Phone Number *
+                          Contact Number
                         </label>
-                        <input
-                          id="profile-phone"
-                          type="tel"
-                          required
-                          value={phoneProfileInput}
-                          onChange={(e) => setPhoneProfileInput(e.target.value)}
-                          placeholder="+88017..."
-                          className="w-full h-10 px-3 text-sm font-mono-tabular bg-[#F7F8FB] border border-[#D3D8E6] rounded-lg focus:outline-none focus:border-[#000066]"
-                        />
+                        <div className="relative">
+                          <Phone className="w-3.5 h-3.5 text-[#737B96] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            id="profile-phone"
+                            type="tel"
+                            value={phoneProfileInput}
+                            onChange={(e) => setPhoneProfileInput(e.target.value)}
+                            placeholder="+880 17..."
+                            className="w-full h-10 pl-9 pr-3 text-sm font-mono-tabular bg-[#F7F8FB] border border-[#D3D8E6] rounded-lg focus:outline-none focus:border-[#000066]"
+                          />
+                        </div>
                       </div>
                     </div>
 

@@ -44,7 +44,8 @@ export interface Product {
   price: number;
   image: string;
   colorway: string;
-  availability: 'In Stock' | 'Limited';
+  availability: 'In Stock' | 'Limited' | 'Out of Stock';
+  stockCount: number;
   description: string;
   specs: string[];
   sizes: string[];

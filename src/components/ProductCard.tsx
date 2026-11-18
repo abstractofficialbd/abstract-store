@@ -25,9 +25,12 @@ export function ProductCard({
 
   const defaultSize =
     propDefaultSize || product.sizes[1] || product.sizes[0] || 'M';
+  const stockCount = Math.max(0, Math.round(product.stockCount ?? 0));
+  const isOutOfStock = stockCount === 0;
 
   const handleQuickAdd = (e: React.MouseEvent) => {
     e.stopPropagation();
+    if (isOutOfStock) return;
     onQuickAdd(product, defaultSize);
     setJustAdded(true);
     window.setTimeout(() => setJustAdded(false), 1200);
@@ -45,7 +48,9 @@ export function ProductCard({
           src={product.image}
           alt={`${product.name} in ${product.colorway}`}
           fallbackLabel={product.name}
-          className="w-full h-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02]"
+          className={`w-full h-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.02] ${
+            isOutOfStock ? 'opacity-65 grayscale-[25%]' : ''
+          }`}
         />
       </button>
 
@@ -54,11 +59,21 @@ export function ProductCard({
           <span className="uppercase tracking-wider font-medium truncate">
             {product.category} · {product.tier}
           </span>
-          {product.availability === 'Limited' && (
-            <span className="text-[#8E6B2E] font-semibold whitespace-nowrap shrink-0">
-              Limited
-            </span>
-          )}
+          <span
+            className={`font-mono-tabular font-semibold whitespace-nowrap shrink-0 ${
+              isOutOfStock
+                ? 'text-[#991B1B]'
+                : stockCount <= 5
+                ? 'text-[#8E6B2E]'
+                : 'text-[#59607A]'
+            }`}
+          >
+            {isOutOfStock
+              ? 'Out of Stock'
+              : stockCount <= 5
+              ? `Only ${stockCount} left`
+              : `${stockCount} left in stock`}
+          </span>
         </div>
 
         <button
@@ -83,14 +98,19 @@ export function ProductCard({
 
           <button
             type="button"
+            disabled={isOutOfStock}
             onClick={handleQuickAdd}
-            className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg transition-colors duration-150 whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000066] ${
-              justAdded
-                ? 'bg-[#C5A467] text-[#050838] font-semibold'
-                : 'bg-[#F1F3F8] text-[#0A1045] hover:bg-[#000066] hover:text-white'
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-medium rounded-lg transition-colors duration-150 whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000066] ${
+              isOutOfStock
+                ? 'bg-[#F1F3F8] text-[#8890A8] cursor-not-allowed'
+                : justAdded
+                ? 'bg-[#C5A467] text-[#050838] font-semibold cursor-pointer'
+                : 'bg-[#F1F3F8] text-[#0A1045] hover:bg-[#000066] hover:text-white cursor-pointer'
             }`}
           >
-            {justAdded ? (
+            {isOutOfStock ? (
+              <span>Sold Out</span>
+            ) : justAdded ? (
               <>
                 <Check className="w-3.5 h-3.5" strokeWidth={2} />
                 <span>Added</span>

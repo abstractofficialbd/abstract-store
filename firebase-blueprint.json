@@ -64,8 +64,9 @@
         "colorway": { "type": "string", "minLength": 1, "maxLength": 80 },
         "availability": {
           "type": "string",
-          "enum": ["In Stock", "Limited"]
+          "enum": ["In Stock", "Limited", "Out of Stock"]
         },
+        "stockCount": { "type": "integer" },
         "description": { "type": "string", "maxLength": 2000 },
         "specs": { "type": "array" },
         "sizes": { "type": "array" },
@@ -147,7 +148,7 @@
     },
     "CustomerProfile": {
       "title": "CustomerProfile",
-      "description": "Customer profile authenticated via Phone OTP with name, avatar photo, contact details, and up to 3 saved delivery addresses.",
+      "description": "Signed-in customer profile with name, avatar photo, contact details, and up to 3 saved delivery addresses.",
       "type": "object",
       "properties": {
         "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
@@ -228,7 +229,7 @@
     },
     "/customers/{userId}": {
       "schema": { "$ref": "#/entities/CustomerProfile" },
-      "description": "Private customer profiles containing name, verified phone, email, avatar, and max 3 saved delivery addresses."
+      "description": "Private customer profiles containing name, contact phone, email, avatar, and max 3 saved delivery addresses."
     },
     "/customers/{userId}/orders/{orderId}": {
       "schema": { "$ref": "#/entities/CustomerOrder" },

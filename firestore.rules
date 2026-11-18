@@ -27,10 +27,7 @@ service cloud.firestore {
     }
 
     function isVerifiedAuthUser() {
-      return isSignedIn() && (
-        request.auth.token.email_verified == true ||
-        (request.auth.token.phone_number is string && request.auth.token.phone_number.size() >= 6)
-      );
+      return isVerifiedUser();
     }
 
     function isBootstrappedOwner() {
@@ -138,6 +135,7 @@ service cloud.firestore {
           'image',
           'colorway',
           'availability',
+          'stockCount',
           'description',
           'specs',
           'sizes',
@@ -161,7 +159,8 @@ service cloud.firestore {
         && data.price is number && data.price > 0 && data.price <= 10000000
         && data.image is string && data.image.size() >= 1 && data.image.size() <= 450000
         && data.colorway is string && data.colorway.size() >= 1 && data.colorway.size() <= 80
-        && data.availability in ['In Stock', 'Limited']
+        && data.availability in ['In Stock', 'Limited', 'Out of Stock']
+        && (!('stockCount' in data) || (data.stockCount is int && data.stockCount >= 0 && data.stockCount <= 100000))
         && data.description is string && data.description.size() <= 2000
         && data.specs is list && data.specs.size() <= 10
         && (data.specs.size() == 0 || (data.specs[0] is string && data.specs[0].size() <= 160))
@@ -473,6 +472,7 @@ service cloud.firestore {
           'image',
           'colorway',
           'availability',
+          'stockCount',
           'description',
           'specs',
           'sizes',

@@ -88,7 +88,7 @@ export function Header({
             aria-label={
               isCustomerSignedIn
                 ? `Open customer profile (${firstName})`
-                : 'Sign in with Phone OTP or open Order History'
+                : 'Sign in or open Order History'
             }
             className="inline-flex items-center gap-2 h-9 px-3 text-xs sm:text-sm font-medium text-white bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#C5A467]"
           >
