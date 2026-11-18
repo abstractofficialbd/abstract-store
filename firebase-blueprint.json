@@ -1,0 +1,242 @@
+{
+  "entities": {
+    "StoreConfig": {
+      "title": "StoreConfig",
+      "description": "Public storefront configuration, front banner, currency rates, about story, and social links.",
+      "type": "object",
+      "properties": {
+        "shopName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "whatsappNumber": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "currencySymbol": { "type": "string", "minLength": 1, "maxLength": 10 },
+        "freeShippingThreshold": { "type": "number" },
+        "flatShippingFee": { "type": "number" },
+        "aboutText": { "type": "string", "maxLength": 2000 },
+        "facebookUrl": { "type": "string", "maxLength": 500 },
+        "instagramUrl": { "type": "string", "maxLength": 500 },
+        "tiktokUrl": { "type": "string", "maxLength": 500 },
+        "heroBanner": { "type": "object" },
+        "exchangeRates": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "maxLength": 128 }
+      },
+      "required": [
+        "shopName",
+        "whatsappNumber",
+        "currencySymbol",
+        "freeShippingThreshold",
+        "flatShippingFee",
+        "aboutText",
+        "facebookUrl",
+        "instagramUrl",
+        "tiktokUrl",
+        "heroBanner",
+        "exchangeRates",
+        "updatedAt",
+        "updatedBy"
+      ]
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Garment listed in the storefront catalog.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "category": {
+          "type": "string",
+          "enum": [
+            "Panjabis",
+            "Casual Shirts",
+            "Polos",
+            "T-Shirts",
+            "Hoodies",
+            "Sweatshirts",
+            "Jackets",
+            "Trousers/Denim"
+          ]
+        },
+        "tier": {
+          "type": "string",
+          "enum": ["Platinum", "Luxury", "Premium", "Essential"]
+        },
+        "price": { "type": "number" },
+        "image": { "type": "string", "minLength": 1, "maxLength": 450000 },
+        "colorway": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "availability": {
+          "type": "string",
+          "enum": ["In Stock", "Limited"]
+        },
+        "description": { "type": "string", "maxLength": 2000 },
+        "specs": { "type": "array" },
+        "sizes": { "type": "array" },
+        "ownerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "name",
+        "category",
+        "tier",
+        "price",
+        "image",
+        "colorway",
+        "availability",
+        "description",
+        "specs",
+        "sizes",
+        "ownerId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SizeChart": {
+      "title": "SizeChart",
+      "description": "Category-group garment measurement chart.",
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string",
+          "enum": ["panjabis", "tops_shirts", "outerwear", "trousers_denim"]
+        },
+        "label": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "unit": { "type": "string", "enum": ["inches", "cm"] },
+        "note": { "type": "string", "maxLength": 500 },
+        "columns": { "type": "array" },
+        "rows": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time" },
+        "updatedBy": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["key", "label", "unit", "note", "columns", "rows", "updatedAt", "updatedBy"]
+    },
+    "AdminProfile": {
+      "title": "AdminProfile",
+      "description": "Authorized store owner/admin identity record.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string", "minLength": 3, "maxLength": 160 },
+        "role": { "type": "string", "enum": ["admin"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["email", "role", "createdAt"]
+    },
+    "ProductReview": {
+      "title": "ProductReview",
+      "description": "Customer star rating and short text feedback for a specific product.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "productId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "rating": { "type": "integer" },
+        "comment": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "productId",
+        "authorId",
+        "authorName",
+        "rating",
+        "comment",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CustomerProfile": {
+      "title": "CustomerProfile",
+      "description": "Customer profile authenticated via Phone OTP with name, avatar photo, contact details, and up to 3 saved delivery addresses.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "fullName": { "type": "string", "maxLength": 80 },
+        "phoneNumber": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "email": { "type": "string", "maxLength": 160 },
+        "photoUrl": { "type": "string", "maxLength": 450000 },
+        "addresses": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "uid",
+        "fullName",
+        "phoneNumber",
+        "email",
+        "photoUrl",
+        "addresses",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "CustomerOrder": {
+      "title": "CustomerOrder",
+      "description": "Customer order record saved under their profile for Order History tracking.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "orderRef": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "customerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "items": { "type": "array" },
+        "subtotal": { "type": "number" },
+        "shipping": { "type": "number" },
+        "total": { "type": "number" },
+        "currency": { "type": "string", "enum": ["BDT", "USD", "EUR", "AED"] },
+        "displayTotalFormatted": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "deliveryDetails": { "type": "object" },
+        "status": {
+          "type": "string",
+          "enum": ["Sent via WhatsApp", "Confirmed", "Dispatched", "Delivered", "Cancelled"]
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "id",
+        "orderRef",
+        "customerId",
+        "items",
+        "subtotal",
+        "shipping",
+        "total",
+        "currency",
+        "displayTotalFormatted",
+        "deliveryDetails",
+        "status",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/storeConfig/{configId}": {
+      "schema": { "$ref": "#/entities/StoreConfig" },
+      "description": "Singleton storefront configuration document ('main')."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/Product" },
+      "description": "Public garment catalog items managed by the store owner."
+    },
+    "/products/{productId}/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/ProductReview" },
+      "description": "Public customer reviews for each product, authored by verified signed-in users."
+    },
+    "/sizeCharts/{chartKey}": {
+      "schema": { "$ref": "#/entities/SizeChart" },
+      "description": "Public size charts keyed by garment group."
+    },
+    "/customers/{userId}": {
+      "schema": { "$ref": "#/entities/CustomerProfile" },
+      "description": "Private customer profiles containing name, verified phone, email, avatar, and max 3 saved delivery addresses."
+    },
+    "/customers/{userId}/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/CustomerOrder" },
+      "description": "Private customer order history records scoped strictly to the owning customer and admins."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminProfile" },
+      "description": "Private admin role records restricted to admins."
+    }
+  }
+}
